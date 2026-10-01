@@ -18,7 +18,7 @@
 <script>
 /* Portal: none (itch.io / standalone).
    Sin SDK: el juego corre con localStorage y sin anuncios. */
-/* GEAR MERGE BUILD v210 */
+/* GEAR MERGE BUILD v211 */
 </script>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -3192,7 +3192,7 @@ const WEEKLY_POOL=[
 ];
 function weekStr(d){
   d=d||new Date();
-  const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  const t=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()));
   const day=(t.getUTCDay()+6)%7;
   t.setUTCDate(t.getUTCDate()-day+3);
   const firstThu=new Date(Date.UTC(t.getUTCFullYear(),0,4));
@@ -3378,7 +3378,7 @@ function dailySeqFor(dateStr){
 /* v58: ISO week string + weekly seeded sequence (one seed all week, 600 drops) */
 function weekStr(d){
   d=d||new Date();
-  const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  const t=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()));
   const day=(t.getUTCDay()+6)%7;
   t.setUTCDate(t.getUTCDate()-day+3);
   const first=new Date(Date.UTC(t.getUTCFullYear(),0,4));
@@ -3728,14 +3728,42 @@ function staticGrads(){
   return gradCache;
 }
 /* ================= RENDER ================= */
+/* v211: SHELL SCALE-TO-FIT (letterbox) — el juego se disena a 480x800. Si el
+   viewport es mas bajo que el diseno (iframes landscape como el 800x450 de
+   GamePix), #wrap se escala completo con transform para que TODO quede
+   visible y jugable, centrado (letterbox). En viewports altos (>=800px) se
+   conserva el layout fluido original sin cambios.
+   Game.shellScale = factor aplicado (1 = sin escalar). fitCanvas y el input
+   lo descuentan porque getBoundingClientRect() devuelve medidas escaladas. */
+function fitShell(){
+  var wrap=document.getElementById("wrap");
+  var vw=window.innerWidth||document.documentElement.clientWidth||480;
+  var vh=window.innerHeight||document.documentElement.clientHeight||800;
+  if(vh>=800){   /* viewport alto: layout fluido original */
+    Game.shellScale=1;
+    wrap.style.flex=""; wrap.style.width=""; wrap.style.height="";
+    wrap.style.transform=""; wrap.style.transformOrigin=""; wrap.style.marginTop="";
+  } else {       /* viewport bajo: letterbox del diseno 480x800 */
+    var s=Math.min(vw/480, vh/800);
+    Game.shellScale=s;
+    wrap.style.flex="none";
+    wrap.style.width="480px"; wrap.style.height="800px";
+    wrap.style.transformOrigin="top center";
+    wrap.style.transform="scale("+s+")";
+    wrap.style.marginTop=Math.max(0,(vh-800*s)/2)+"px";
+  }
+  fitCanvas();
+}
 function fitCanvas(){
   const st=document.getElementById("stage");
   const r=st.getBoundingClientRect();
+  const k=Game.shellScale||1;   // v211: descontar el letterbox (rect escalado)
+  const sw=r.width/k, sh=r.height/k;
   // v39: DPR floor of 2 on 1080p+ screens — 1x desktop displays get 2x SSAA,
   // high-DPI phones keep their native ratio (capped at 2 for fill-rate).
   const scrMax=(typeof screen!=="undefined")?Math.max(screen.width||0,screen.height||0):0;
   DPR=Math.min(2,Math.max(window.devicePixelRatio||1,scrMax>=1080?2:1));
-  cv.width=Math.max(2,r.width*DPR); cv.height=Math.max(2,r.height*DPR);
+  cv.width=Math.max(2,sw*DPR); cv.height=Math.max(2,sh*DPR);
   // logical 480x800 scaled to fit height
   Game.viewScale = cv.height/DPR/H;
   Game.viewOX = (cv.width/DPR - W*Game.viewScale)/2;
@@ -3961,9 +3989,9 @@ function render(dt){
     // next piece: ghost-style preview
     gx.fillStyle="rgba(255,255,255,.55)"; gx.font="700 11px "+FONT; gx.textAlign="right";
     gx.fillText("NEXT",BOX.r-4,26);
-    // v34: visible version stamp — bottom-left corner (build.py reemplaza v210)
+    // v34: visible version stamp — bottom-left corner (build.py reemplaza v211)
     gx.textAlign="left"; gx.fillStyle="rgba(255,255,255,.35)"; gx.font="700 11px "+FONT;
-    gx.fillText("v210",BOX.l+2,794);
+    gx.fillText("v211",BOX.l+2,794);
     // v22: assist-mode indicator
     if(Game.assist){ gx.textAlign="left"; gx.fillStyle="#7dd3c0"; gx.font="900 12px "+FONT;
       gx.fillText("🤖 ASSIST",BOX.l+6,24); gx.textAlign="right"; }
@@ -4377,13 +4405,15 @@ function frame(ts){
 /* ================= INPUT ================= */
 function ptrX(e){
   const r=cv.getBoundingClientRect();
+  const k=Game.shellScale||1;   // v211: coords de pantalla vienen escaladas
   const s=Game.viewScale||1, ox=Game.viewOX||0;
-  return ((e.clientX-r.left)-ox)/s;
+  return (((e.clientX-r.left)/k)-ox)/s;
 }
 function ptrY(e){  // v51: same uniform scale as X (canvas fits height, X is letterboxed)
   const r=cv.getBoundingClientRect();
+  const k=Game.shellScale||1;   // v211
   const s=Game.viewScale||1;
-  return (e.clientY-r.top)/s;
+  return ((e.clientY-r.top)/k)/s;
 }
 cv.addEventListener("pointermove",e=>{ Game.aimX=ptrX(e); });
 cv.addEventListener("pointerdown",e=>{
@@ -4692,8 +4722,8 @@ ui.btnCodex.onclick=()=>{ Sfx.click(); renderCodex(); ui.ovCodex.classList.remov
 ui.btnCodexClose.onclick=()=>{ Sfx.click(); ui.ovCodex.classList.add("hide"); };
 ui.btnBoardClose.onclick=()=>{ Sfx.click(); ui.ovBoard.classList.add("hide"); };
 ui.btnStatsClose.onclick=()=>{ Sfx.click(); ui.ovStats.classList.add("hide"); };
-window.addEventListener("resize",fitCanvas);
-window.addEventListener("orientationchange",()=>setTimeout(fitCanvas,300));
+window.addEventListener("resize",fitShell);   // v211: re-escala el letterbox
+window.addEventListener("orientationchange",()=>setTimeout(fitShell,300));
 
 /* ================= BOOT ================= */
 Stats.load();   // v4: lifetime stats from local storage (portal Store refreshes below)
@@ -4734,8 +4764,8 @@ buildEvo();
 Settings.load(); Settings.apply();   // v54: user settings before first render
 renderTitle();   // v48: per-mode bests on the title screen (incl. daily label)
 initBg();
-fitCanvas();
-setTimeout(fitCanvas,100);
+fitShell();   // v211: letterbox scale-to-fit (llama a fitCanvas)
+setTimeout(fitShell,100);
 Portal.boot();
 // Refrescar best/descubrimientos desde el storage del portal (si el adapter lo reemplazó)
 Store.get("best").then(v=>{ const n=parseInt(v||"0",10)||0;
